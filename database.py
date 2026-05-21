@@ -11,36 +11,28 @@ def get_connection():
     return conn
 
 def init_db():
-    """Crée les tables et génère un volume important de données réalistes."""
-    # Force la réinitialisation pour charger les nouvelles données volumineuses
+    """Crée les tables et génère un volume très important de données géolocalisées."""
+    # Force la réinitialisation pour charger le nouveau schéma
     if os.path.exists(DB_FILE):
         os.remove(DB_FILE)
         
     conn = get_connection()
     cursor = conn.cursor()
     
-    # --- CRÉATION DES TABLES ---
+    # --- 1. CRÉATION DES TABLES ---
+    cursor.execute("CREATE TABLE Devise (id INTEGER PRIMARY KEY AUTOINCREMENT, EUR REAL);")
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Devise (
+        CREATE TABLE Pays (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            EUR REAL
-        );
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Pays (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Villes TEXT,
-            Aerorports INTEGER,
+            Nom TEXT,
             Devise INTEGER,
             FOREIGN KEY(Devise) REFERENCES Devise(id)
         );
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Ville (
+        CREATE TABLE Ville (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Nom TEXT,
-            Hotels INTEGER,
-            Activités INTEGER,
             Météo TEXT,
             Pays_id INTEGER,
             lat REAL,
@@ -49,16 +41,15 @@ def init_db():
         );
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Aeroport (
+        CREATE TABLE Aeroport (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Nom TEXT,
-            Adresse INTEGER,
-            Vols INTEGER,
-            FOREIGN KEY(Adresse) REFERENCES Ville(id)
+            Adresse_Ville INTEGER,
+            FOREIGN KEY(Adresse_Ville) REFERENCES Ville(id)
         );
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Hotel (
+        CREATE TABLE Hotel (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Nom TEXT,
             Type TEXT,
@@ -69,196 +60,99 @@ def init_db():
         );
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Activité (
+        CREATE TABLE Activité (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Nom TEXT,
-            Adresse TEXT,
             Type TEXT,
             Prix REAL,
             Ville_id INTEGER,
+            lat REAL, -- NOUVEAU SCHÉMA
+            lon REAL, -- NOUVEAU SCHÉMA
             FOREIGN KEY(Ville_id) REFERENCES Ville(id)
         );
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Vol (
+        CREATE TABLE Vol (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Aéroport_de_départ INTEGER,
             Aéroport_d_arrivée INTEGER,
             Type TEXT,
             Prix REAL,
-            Date TEXT,
             FOREIGN KEY(Aéroport_de_départ) REFERENCES Aeroport(id),
             FOREIGN KEY(Aéroport_d_arrivée) REFERENCES Aeroport(id)
         );
     """)
     
-    # --- 1. INSERTION DEVISES & PAYS ---
-    cursor.execute("INSERT INTO Devise (id, EUR) VALUES (1, 1.0), (2, 1.09), (3, 152.4), (4, 1.48);") # EUR, USD, JPY, CAD
-    cursor.execute("""
-        INSERT INTO Pays (id, Villes, Aerorports, Devise) VALUES 
-        (1, 'France', 1, 1), 
-        (2, 'USA', 2, 2), 
-        (3, 'Japon', 3, 3),
-        (4, 'Canada', 4, 4);
-    """)
+    # --- 2. INSERTION DEVISES & PAYS ---
+    cursor.execute("INSERT INTO Devise (id, EUR) VALUES (1, 1.0), (2, 1.09), (3, 152.4);") # EUR, USD, JPY
+    cursor.execute("INSERT INTO Pays (id, Nom, Devise) VALUES (1, 'France', 1), (2, 'USA', 2), (3, 'Japon', 3);")
     
-    # --- 2. INSERTION VILLES (Avec coordonnées géographiques exactes) ---
-    villes_data = [
-        (1, 'Paris', 'Ensoleillé, 21°C', 1, 48.8566, 2.3522),
-        (2, 'Nice', 'Ciel dégagé, 24°C', 1, 43.7102, 7.2620),
-        (3, 'New York', 'Nuageux, 18°C', 2, 40.7128, -74.0060),
-        (4, 'Tokyo', 'Pluie légère, 16°C', 3, 35.6762, 139.6503),
-        (5, 'Montréal', 'Vent dous, 19°C', 4, 45.5017, -73.5673),
-        (6, 'Kyoto', 'Beau soleil, 22°C', 3, 35.0116, 135.7681)
-    ]
-    for v in villes_data:
-        cursor.execute("INSERT INTO Ville (id, Nom, Météo, Pays_id, lat, lon) VALUES (?, ?, ?, ?, ?, ?);", v)
-        
-    # --- 3. INSERTION AÉROPORTS ---
-    cursor.execute("""
-        INSERT INTO Aeroport (id, Nom, Adresse) VALUES 
-        (1, 'Paris CDG (LFPG)', 1), 
-        (2, 'Nice Côte dAzur (LFMN)', 2), 
-        (3, 'New York JFK (KJFK)', 3), 
-        (4, 'Tokyo Haneda (RJTT)', 4),
-        (5, 'Montréal-Trudeau (CYUL)', 5),
-        (6, 'Osaka Itami (RJOO) - Proche Kyoto', 6);
-    """)
+    # --- 3. INSERTION VILLES (Coordonnées du centre pour le zoom initial) ---
+    cursor.execute("INSERT INTO Ville VALUES (1, 'Paris', 'Soleil, 22°C', 1, 48.8566, 2.3522);")
+    cursor.execute("INSERT INTO Ville VALUES (2, 'New York', 'Nuageux, 19°C', 2, 40.7128, -74.0060);")
     
-    # --- 4. INSERTION HOTELS (Économique, Normal, Luxe pour chaque destination) ---
+    # --- 4. INSERTION HOTELS (Gamme de confort) ---
     hotels = [
-        # Paris (Ville 1)
-        ('Hostel Les Piaules Belleville', 'Économique', 38.0, '59 Boulevard de Belleville, Paris', 1),
-        ('Generator Paris', 'Économique', 42.0, '9 Place du Colonel Fabien, Paris', 1),
-        ('Hôtel Standard design Paris', 'Normal', 135.0, '29 Rue Taillandiers, Paris', 1),
-        ('Hôtel API Voyageur Paris', 'Normal', 110.0, '14 Rue de la Bourse, Paris', 1),
-        ('The Ritz Paris', 'Luxe', 1100.0, '15 Place Vendôme, Paris', 1),
-        ('Le Bristol Paris', 'Luxe', 980.0, '112 Rue du Faubourg Saint-Honoré, Paris', 1),
-        
-        # Nice (Ville 2)
-        ('Meyerbeer Beach Hostel', 'Économique', 30.0, '15 Rue Meyerbeer, Nice', 2),
-        ('Hôtel Windsor', 'Normal', 115.0, '11 Rue Dalpozzo, Nice', 2),
-        ('Hôtel Aston La Scala', 'Normal', 140.0, '12 Avenue Félix Faure, Nice', 2),
-        ('Nice Negresco', 'Luxe', 520.0, '37 Promenade des Anglais, Nice', 2),
-        ('Hyatt Regency Palais de la Méditerranée', 'Luxe', 460.0, '13 Promenade des Anglais, Nice', 2),
-        
-        # New York (Ville 3)
-        ('HI New York City Hostel', 'Économique', 65.0, '891 Amsterdam Ave, NY', 3),
-        ('Pod 39 Hotel Manhattan', 'Économique', 95.0, '145 E 39th St, NY', 3),
-        ('CitizenM New York Times Square', 'Normal', 210.0, '218 W 50th St, NY', 3),
-        ('Arlo NoMad', 'Normal', 185.0, '11 E 31st St, NY', 3),
-        ('The Plaza Hotel NY', 'Luxe', 990.0, '768 5th Ave, NY', 3),
-        ('The Mandarin Oriental', 'Luxe', 1250.0, '80 Columbus Circle, NY', 3),
-        
-        # Tokyo (Ville 4)
-        ('Nine Hours Capsule Shinjuku', 'Économique', 28.0, 'Shinjuku 1-1, Tokyo', 4),
-        ('Book and Bed Tokyo Shinjuku', 'Économique', 35.0, 'Kabukicho, Tokyo', 4),
-        ('Keio Plaza Hotel Tokyo', 'Normal', 190.0, 'Nishi-Shinjuku, Tokyo', 4),
-        ('Shiba Park Hotel', 'Normal', 145.0, 'Minato-ku, Tokyo', 4),
-        ('Aman Tokyo', 'Luxe', 1350.0, 'Chiyoda-ku, Tokyo', 4),
-        ('The Ritz-Carlton Tokyo', 'Luxe', 1100.0, 'Akasaka, Tokyo', 4),
-
-        # Montréal (Ville 5)
-        ('M Montreal Hostel', 'Économique', 32.0, '1245 Rue Saint-André, Montréal', 5),
-        ('Samesun Montreal Central', 'Économique', 29.0, '1586 St Denis St, Montréal', 5),
-        ('Hôtel Monville', 'Normal', 160.0, '1041 Rue de Bleury, Montréal', 5),
-        ('Alt Hôtel Montréal', 'Normal', 145.0, '120 Peel St, Montréal', 5),
-        ('Ritz-Carlton Montréal', 'Luxe', 550.0, '1228 Sherbrooke St W, Montréal', 5),
-        ('Hôtel William Gray', 'Luxe', 380.0, '421 Rue Saint Vincent, Montréal', 5),
-
-        # Kyoto (Ville 6)
-        ('Piece Hostel Kyoto', 'Économique', 25.0, 'Minami-ku, Kyoto', 6),
-        ('Kyoto Granbell Hotel', 'Normal', 130.0, 'Gionmachi, Kyoto', 6),
-        ('The Thousand Kyoto', 'Luxe', 420.0, 'Shimogyo-ku, Kyoto', 6)
-    ]
-    for h in hotels:
-        cursor.execute("INSERT INTO Hotel (Nom, Type, Prix, Adresse, Ville_id) VALUES (?, ?, ?, ?, ?);", h)
-        
-    # --- 5. INSERTION ACTIVITÉS (Très variées par goûts) ---
-    activites = [
         # Paris
-        ('Musée du Louvre', 'Palais Royal', 'Culture', 22.0, 1),
-        ('Tour Eiffel (Sommet)', 'Champ de Mars', 'Culture', 29.0, 1),
-        ('Balade guidée Street-Art', 'Butte-aux-Cailles', 'Culture', 15.0, 1),
-        ('Bateaux Mouches romantiques', 'Pont de lAlma', 'Détente', 16.0, 1),
-        ('Escape Game Panique à lOpéra', 'Opéra Garnier', 'Aventure', 35.0, 1),
-        ('Session Shopping Printemps', 'Boulevard Haussmann', 'Shopping', 0.0, 1),
-        ('Dégustation Fromage & Vin', 'Le Marais', 'Détente', 55.0, 1),
-        
-        # Nice
-        ('Plongée sous-marine / Baptême', 'Port de Nice', 'Aventure', 80.0, 2),
-        ('Musée Marc Chagall', 'Avenue Docteur Ménard', 'Culture', 10.0, 2),
-        ('Canyoning dans larrière-pays', 'Gorges du Loup', 'Aventure', 65.0, 2),
-        ('Chasse aux trésors Vieux-Nice', 'Place Masséna', 'Culture', 12.0, 2),
-        ('Location de Transat privé + Cocktail', 'Promenade des Anglais', 'Détente', 45.0, 2),
-        ('Shopping Cours Saleya', 'Vieux Nice', 'Shopping', 0.0, 2),
-        
+        ('Hostel Generator Paris', 'Économique', 45.0, 'Place du Colonel Fabien', 1),
+        ('Hôtel Standard design Paris', 'Normal', 140.0, 'Rue des Taillandiers', 1),
+        ('The Ritz Paris', 'Luxe', 1100.0, 'Place Vendôme', 1),
         # New York
-        ('Survol de NYC en hélicoptère', 'Manhattan Heliport', 'Aventure', 260.0, 3),
-        ('MoMA (Museum of Modern Art)', '11 W 53rd St', 'Culture', 25.0, 3),
-        ('Observatoire Edge Hudson Yards', '30 Hudson Yards', 'Aventure', 42.0, 3),
-        ('Spectacle de Broadway (Roi Lion)', 'Times Square', 'Culture', 110.0, 3),
-        ('Balade guidée dans Central Park', 'Central Park', 'Détente', 20.0, 3),
-        ('Shopping Outlets Woodbury', 'Bus depuis Port Authority', 'Shopping', 40.0, 3),
-        ('Croisière Statue de la Liberté', 'Battery Park', 'Culture', 30.0, 3),
-        
-        # Tokyo
-        ('Excursion d''une journée au Mont Fuji', 'Départ Shinjuku', 'Aventure', 95.0, 4),
-        ('Quartier Geek & Robotique Akihabara', 'Akihabara Station', 'Shopping', 0.0, 4),
-        ('Cérémonie du Thé Traditionnelle', 'Asakusa', 'Culture', 45.0, 4),
-        ('Bains thermaux de style Edo', 'Odaiba', 'Détente', 30.0, 4),
-        ('Karting en ville déguisé (Street Go-Kart)', 'Shibuya', 'Aventure', 75.0, 4),
-        ('Musée d''art numérique teamLab Planets', 'Toyosu', 'Culture', 26.0, 4),
-        ('Shopping de mode alternative', 'Harajuku Takeshita St', 'Shopping', 0.0, 4),
-
-        # Montréal
-        ('Randonnée guidée du Mont-Royal', 'Parc du Mont-Royal', 'Détente', 15.0, 5),
-        ('Visite de la Basilique Notre-Dame', 'Vieux-Montréal', 'Culture', 14.0, 5),
-        ('Saut à l''élastique / Tyrolienne', 'Vieux-Port', 'Aventure', 25.0, 5),
-        ('Dégustation culinaire (Poutine & Bagels)', 'Plateau Mont-Royal', 'Détente', 40.0, 5),
-        ('Shopping souterrain (RÉSO)', 'Centre-ville', 'Shopping', 0.0, 5),
-        ('Musée des Beaux-Arts de Montréal', 'Sherbrooke St W', 'Culture', 24.0, 5),
-
-        # Kyoto
-        ('Sanctuaire Fushimi Inari (Mille Toris)', 'Fushimi-ku', 'Culture', 0.0, 6),
-        ('Forêt de Bambous d''Arashiyama', 'Arashiyama', 'Détente', 0.0, 6),
-        ('Cours de cuisine de sushis traditionnels', 'Gion', 'Aventure', 60.0, 6)
+        ('HI New York City Hostel', 'Économique', 70.0, 'Amsterdam Ave', 2),
+        ('CitizenM Times Square', 'Normal', 220.0, '218 W 50th St', 2),
+        ('The Plaza Hotel NY', 'Luxe', 980.0, '768 5th Ave', 2)
     ]
-    for a in activites:
-        cursor.execute("INSERT INTO Activité (Nom, Adresse, Type, Prix, Ville_id) VALUES (?, ?, ?, ?, ?);", a)
+    cursor.executemany("INSERT INTO Hotel (Nom, Type, Prix, Adresse, Ville_id) VALUES (?, ?, ?, ?, ?);", hotels)
         
-    # --- 6. INSERTION VOLS ALLER-RETOUR ---
-    # Pour chaque destination lointaine (3, 4, 5) et proche (2), on génère des vols Éco, Normal et Luxe.
-    # Aéroport de départ = 1 (Paris CDG)
-    vols_catalogue = [
-        # Vols vers Nice (Arrêt 2)
-        (1, 2, 'Économique', 49.0, '2026-06-15'),
-        (1, 2, 'Normal', 110.0, '2026-06-15'),
-        (1, 2, 'Luxe', 290.0, '2026-06-15'),
+    # --- 5. ÉNORME INJECTION D'ACTIVITÉS GÉOLOCALISÉES ---
+    # Nous ajoutons de nombreux points précis pour voir des clusters sur la carte.
+    activites = [
+        # PARIS (Ville_id = 1)
+        # Culture
+        ('Musée du Louvre (Entrée Pyramide)', 'Culture', 22.0, 1, 48.8610, 2.3358),
+        ('Musée d''Orsay (Entrée Principale)', 'Culture', 18.0, 1, 48.8599, 2.3265),
+        ('Cathédrale Notre-Dame (Parvis)', 'Culture', 0.0, 1, 48.8530, 2.3499),
+        ('Sainte-Chapelle', 'Culture', 11.5, 1, 48.8555, 2.3450),
+        ('Centre Pompidou (Place Georges Pompidou)', 'Culture', 15.0, 1, 48.8606, 2.3522),
+        ('Panthéon (Place du Panthéon)', 'Culture', 11.5, 1, 48.8462, 2.3464),
+        # Aventure / Vues
+        ('Tour Eiffel (Pilier Nord)', 'Aventure', 28.0, 1, 48.8584, 2.2945),
+        ('Arc de Triomphe (Haut de l''avenue Champs-Élysées)', 'Aventure', 13.0, 1, 48.8738, 2.2950),
+        ('Catacombes de Paris (Entrée)', 'Aventure', 29.0, 1, 48.8338, 2.3324),
+        # Détente
+        ('Jardin des Tuileries (Allée Centrale)', 'Détente', 0.0, 1, 48.8635, 2.3275),
+        ('Jardin du Luxembourg (Fontaine Médicis)', 'Détente', 0.0, 1, 48.8462, 2.3372),
+        ('Parc des Buttes-Chaumont (Île du Belvédère)', 'Détente', 0.0, 1, 48.8800, 2.3830),
+        # Shopping / Balade
+        ('Dégustation Macarons Pierre Hermé', 'Shopping', 25.0, 1, 48.8502, 2.3320),
+        ('Balade guidée du Marais (Place des Vosges)', 'Culture', 20.0, 1, 48.8555, 2.3655),
+        ('Shopping Galeries Lafayette (Coupole)', 'Shopping', 0.0, 1, 48.8732, 2.3321),
         
-        # Vols vers New York (Arrêt 3)
-        (1, 3, 'Économique', 420.0, '2026-06-15'),
-        (1, 3, 'Normal', 790.0, '2026-06-15'),
-        (1, 3, 'Luxe', 3400.0, '2026-06-15'),
-        
-        # Vols vers Tokyo (Arrêt 4)
-        (1, 4, 'Économique', 680.0, '2026-06-15'),
-        (1, 4, 'Normal', 1250.0, '2026-06-15'),
-        (1, 4, 'Luxe', 5200.0, '2026-06-15'),
-
-        # Vols vers Montréal (Arrêt 5)
-        (1, 5, 'Économique', 390.0, '2026-06-15'),
-        (1, 5, 'Normal', 720.0, '2026-06-15'),
-        (1, 5, 'Luxe', 2800.0, '2026-06-15'),
-
-        # Vols vers Kyoto/Osaka (Arrêt 6)
-        (1, 6, 'Économique', 710.0, '2026-06-15'),
-        (1, 6, 'Normal', 1300.0, '2026-06-15'),
-        (1, 6, 'Luxe', 5400.0, '2026-06-15')
+        # NEW YORK (Ville_id = 2)
+        # Culture
+        ('MoMA (Museum of Modern Art)', 'Culture', 25.0, 2, 40.7614, -73.9776),
+        ('Metropolitan Museum of Art (The Met)', 'Culture', 30.0, 2, 40.7794, -73.9632),
+        ('Guggenheim Museum', 'Culture', 25.0, 2, 40.7830, -73.9590),
+        ('Mémorial du 9/11 (Bassin Sud)', 'Culture', 0.0, 2, 40.7115, -74.0132),
+        ('Spectacle Broadway (Majestic Theatre)', 'Culture', 120.0, 2, 40.7584, -73.9880),
+        # Aventure / Vues
+        ('Empire State Building (Observatoire 86e)', 'Aventure', 44.0, 2, 40.7484, -73.9857),
+        ('Top of the Rock (Rockefeller Center)', 'Aventure', 40.0, 2, 40.7587, -73.9787),
+        ('Observatoire Edge Hudson Yards', 'Aventure', 38.0, 2, 40.7538, -74.0010),
+        ('Survol Hélicoptère (Downtown Heliport)', 'Aventure', 260.0, 2, 40.7011, -74.0100),
+        ('Traversée du Brooklyn Bridge (Départ Manhattan)', 'Aventure', 0.0, 2, 40.7100, -74.0000),
+        # Détente
+        ('Central Park (Bethesda Terrace)', 'Détente', 0.0, 2, 40.7738, -73.9708),
+        ('Balade sur la High Line (Gansevoort St)', 'Détente', 0.0, 2, 40.7395, -74.0080),
+        ('Croisière Statue de la Liberté (Départ Battery Park)', 'Détente', 24.0, 2, 40.7033, -74.0170),
+        # Shopping / Balade
+        ('Times Square (Marches Rouges)', 'Shopping', 0.0, 2, 40.7580, -73.9855),
+        ('Shopping 5th Avenue (Apple Store Cube)', 'Shopping', 0.0, 2, 40.7635, -73.9722),
+        ('Grand Central Terminal (Main Concourse)', 'Culture', 0.0, 2, 40.7527, -73.9772),
+        ('Marché de Chelsea Market', 'Shopping', 0.0, 2, 40.7420, -74.0060)
     ]
-    for v in vols_catalogue:
-        cursor.execute("INSERT INTO Vol (Aéroport_de_départ, Aéroport_d_arrivée, Type, Prix, Date) VALUES (?, ?, ?, ?, ?);", v)
-        
+    cursor.executemany("INSERT INTO Activité (Nom, Type, Prix, Ville_id, lat, lon) VALUES (?, ?, ?, ?, ?, ?);", activites)
+    
     conn.commit()
     conn.close()
 
